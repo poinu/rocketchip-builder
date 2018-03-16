@@ -22,8 +22,7 @@
 
 VERILATOR_CONFIG=DualCoreConfig
 RUN_VERILATOR_TESTS=false
-KERNEL_BRANCH=master
-KERNEL_COMMIT_HASH=master
+KERNEL_COMMIT_HASH=riscv-linux-4.15
 
 # +---------------+
 # | Phase control |
@@ -31,7 +30,7 @@ KERNEL_COMMIT_HASH=master
 
 BUILD_GNU_LINUX_TOOLCHAIN=true
 BUILD_VERILATOR_EMULATOR=true
-BUILD_BUSYBOX=true
+BUILD_BUSYBOX=false
 BUILD_FULL_BUSYBOX=false
 BUILD_KERNEL=true
 
@@ -314,25 +313,31 @@ then
 else
     echo "BusyBox installation found, skipping..."
 fi
+cd $RISCV_ROOT
 
-echo -e "\n=============== Building RISCV Kernel =================\n"
-LINUX=$RISCV_ROOT/linux
+echo -e "\n=============== Obtaining RISCV Linux Kernel =================\n"
+LINUX=$RISCV_ROOT/riscv-linux
+
+if [ ! -d "$LINUX" ]
+then
+    echo "Cloning repository from scratch..."
+    git clone --recursive -j$(nproc) https://github.com/riscv/riscv-linux.git
+    check_status "Cloning RISCV Linux Kernel"
+else
+    echo "RISCV Linux Kernel repository found, skipping..."
+fi
+
+echo -e "\n=============== Building RISCV Linux Kernel =================\n"
 if $BUILD_KERNEL
 then
-    if [ ! -d "$LINUX" ] || $FORCE_REBUILD_KERNEL
+    cd $LINUX
+    if $FORCE_REBUILD_KERNEL
     then
-        rm -rf $LINUX
-        mkdir -p $LINUX
-        curl -L https://cdn.kernel.org/pub/linux/kernel/v4.x/linux-4.6.2.tar.xz | tar xJ --strip-components=1 -C $LINUX
-        check_status "Downloading Linux kernel"
+        git clean -dfx -f
+        git reset --hard
+        git pull
+        git checkout $KERNEL_COMMIT_HASH
 
-        cd $LINUX
-        git init
-        git remote add -f -t $KERNEL_BRANCH origin https://github.com/riscv/riscv-linux.git
-        check_status "Fetching riscv-linux repository"
-        git checkout -f -t origin/$KERNEL_BRANCH
-
-        git reset --hard $KERNEL_COMMIT_HASH
         make mrproper
         make ARCH=riscv defconfig
         check_status "Configuring Linux kernel"
@@ -351,7 +356,6 @@ then
         check_status "Configuring Linux kernel"
     fi
 
-    cd $LINUX
     make ARCH=riscv -j$(nproc) vmlinux
     check_status "Building Linux kernel"
 else
